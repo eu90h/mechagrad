@@ -249,4 +249,4 @@ I settled on the idea of using the well-vetted torch library, or more particular
 The idea is that we build the same expression in both my Tensor implementation and in torch, call the backward function, and then compare the gradients computed.
 
 As a capstone test, I created a feedforward neural network with ReLU activation and trained it to label digits in the MNIST set. I tasked torch with the same. At every
-step of the training of the network, we compare the gradients computed by my implementation and torch, ensuring that they agree to some arbitrary precision.
+step of the training of the network, I compare the gradients computed by my implementation and torch, ensuring that they agree to some determined precision.
