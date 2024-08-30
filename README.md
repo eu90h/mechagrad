@@ -19,36 +19,38 @@ The Value object is central here. It wraps a floating-point value, providing sto
 that operate on other values, working to dynamically build a graph of the expression being computed.
 
 When we're building the graph of the computed expression, we actually compute the value of the expression at the same time. This process is known
-as the forward pass. We can take the resulting graph and perform a backward pass in order to compute derivatives. This is embodied in the Value's backward method.
+as the forward pass. We can take the resulting graph and perform a backward pass in order to compute derivatives. This is embodied in the Value's `backward` method.
 First, the graph is topologically sorted into a list of nodes, the gradient of that final node is set to 1, and then each node in the reversed topologically-sorted
-node list has its backward_ function called, which is actually responsible for computing the derivatives.
+node list has its `backward_ `function called, which is actually responsible for computing the derivatives.
 
 It's worth noting that the topological sort is essentially a reverse-order depth-first-search on the computational graph (viewed as a directed acyclic graph).
 As it happens, this guarantees that at least one path through the graph exists that visits every node in linear time.
 
-The Value object stores a few pieces of data relating to the computational graph. We have _backward, which stores a function responsible for the actual computation of
-derivatives. There is also _prev which stores that nodes children as a set. In the computation, for instance, of "x + y", a node corresponding to the result of the addition operation
-is constructed with Values x and y as its children. The final field is _op which is mainly for human convenience, merely denoting (as a string) 
+The Value object stores a few pieces of data relating to the computational graph. We have `_backward`, which stores a function responsible for the actual computation of
+derivatives. There is also `_prev` which stores that nodes children as a set. In the computation, for instance, of `x + y`, a node corresponding to the result of the addition operation
+is constructed with Values x and y as its children. The final field is `_op` which is mainly for human convenience, merely denoting (as a string) 
 the operation that produced that Value.
 
-Let's look at how one of the derivatives are computed. The _backward function for add looks like
+Let's look at how one of the derivatives are computed. The `_backward` function for add looks like
+```
 def _backward():
     self.grad += out.grad
     other.grad += out.grad
-This closure captures self and other, the two children of that add node, and gets stored in the result's _backward field.
+```
+This closure captures self and other, the two children of that add node, and gets stored in the result's `_backward` field.
 
-It's fairly easy now to imagine how this all fits together. We call backward, which sets off a chain reaction of calls to different node's _backward functions.
-These set the .grad field of their children, which then get their _backward called, which continues pushing the grads around, etc., until we've traversed the whole graph.
+It's fairly easy now to imagine how this all fits together. We call `backward`, which sets off a chain reaction of calls to different node's `_backward` functions.
+These set the `.grad` field of their children, which then get their `_backward` called, which continues pushing the grads around, etc., until we've traversed the whole graph.
 
 Karpathy's micrograd is delightfully simple and shows the entire essence of a AD engine. 
 ------
 Now let's take a look at a look at the MyTorch project for the fall 2020 semester of CMU's 11-785 Introduction to Deep Learning.
 This, as the name hints, intends to replicate a reasonable subset of the widely-used PyTorch library.
 
-As with micrograd, MyTorch revolves around a central wrapper object called a Tensor, which in this case wraps over a numpy ndarray instead of a scalar float.
-A micrograd _backward is a MyTorch Tensor's grad_fn field. Tensors need to be explicitly marked as requiring gradients by setting the requires_grad field to True.
-A Tensor may also be a leaf node, which means that none of its parents require gradients. This status is tored in the is_leaf field.
-The combination of requires_grad and is_leaf determines what that Tensor is doing in the computational graph:
+As with micrograd, MyTorch revolves around a central wrapper object called a `Tensor`, which in this case wraps over a numpy ndarray instead of a scalar float.
+A micrograd `_backward` is a MyTorch Tensor's `grad_fn` field. Tensors need to be explicitly marked as requiring gradients by setting the `requires_grad` field to `True`.
+A Tensor may also be a leaf node, which means that none of its parents require gradients. This status is tored in the `is_leaf` field.
+The combination of requires_grad and `is_leaf` determines what that Tensor is doing in the computational graph:
 
 * AccumulateGrad nodes (is_leaf=True, requires_grad=True). This node does what is says -- it adds a given value to its associated tensor's grad field.
 * BackwardFunction nodes. (is_leaf=False, requires_grad=True). These nodes calculate gradients and send them out to associated nodes, much like the _backward function
@@ -63,9 +65,9 @@ Operations are represented as objects that implement a particular interface deri
 
 Forward methods implement the forward pass. They're responsible for computing the output Tensor as well as storing any data required for the backward pass in
 the context (ctx) object.
-The apply method is typically the same for all operations, being inherited from the Function class.
+The apply method is typically the same for all operations, being inherited from the `Function` class.
 The job of apply is to do the forward pass and actually perform the construction of the computational graph.
-The backward method is directly analogous to micrograd's _backward functions.
+The backward method is directly analogous to micrograd's `_backward` functions.
 
 Notice how micrograd avoids the need for a context object by using a closure in the forward pass to capture the information needed later.
 
@@ -78,10 +80,31 @@ we come across. There is no explicit reversal/sorting of the graph in the case o
 At this point, I felt ready to dive in and try my hand at writing an AD engine. I chose to use the Rust language for this project and decided to mimic the architecture
 laid out by MyTorch.
 
-My AD engine, Mechagrad, hews to MyTorch pretty closely. It wraps an N-dimensional array, helpfully provided by the ndarray crate.
+My AD engine, Mechagrad, hews to MyTorch pretty closely. It wraps an N-dimensional array, helpfully provided by the ndarray crate. My Tensors are defined quite similarly to MyTorch:
+```
+#[derive(Clone)]
+pub struct Tensor {
+    pub(crate) data: ArcArray<f64, IxDyn>,
+    pub(crate) requires_grad: bool,
+    pub(crate) is_leaf: bool,
+    pub(crate) grad: Cell<Option<Tensor>>,
+    pub(crate) grad_fn: Option<Cell<Node>>,
+    pub(crate) detached: bool,
+}
+```
+
+The `data` field contains the actually ndarray.
+requires_grad marks a tensor so that it actually receives a gradient value later in the "backward pass"
+The `grad` field contains an optional Tensor that represents the actual gradient value
+the `grad_fn` field contains an optional Node that is either a `BackwardFunction` object or an `AccumulateGrad` object.
+* `BackwardFunctions` compute gradients and throw them backwards to the operations inputs,
+* `AccumulateGrad` functions do exactly what the name suggests: accumulate anything given to it into a gradient tensor.
+the detached field allows one to temporarily detach a tensor so that any operations on it don't get added to the computational graph.
+    this is useful for instance when updating tensors. We don't want the update step to have its gradient computed.
+
 
 Exactly like PyTorch, I override the various arithmetical operations on Tensors so as to build up a computational graph.
-Consider the addition of two tensors: x + y.
+Consider the addition of two tensors: `x + y`.
 
 ```
 impl std::ops::Add for Tensor {
@@ -111,7 +134,15 @@ pub(crate) trait Function {
 }
 ```
 
-The forward function is typically simple. For Add this looks like
+Context objects a la MyTorch are unneccessary, as the data required for the backward pass can be stored directly in that operation's struct:
+```
+pub(crate) struct Add {
+    pub(crate) left: Rc<RefCell<Tensor>>,
+    pub(crate) right: Rc<RefCell<Tensor>>
+}
+```
+
+The forward function is typically simple. For `Add` this looks like
 
 ```
 fn forward(&mut self) -> Tensor {
@@ -243,7 +274,19 @@ fn apply(&mut self) -> Option<Vec<Tensor>> {
 So much for the outline of the Add operation. Similar objects are implemented for other basic operations including multiplication, 
 matrix multiplication, dot product, division, exp, log, etc.
 
-Accuracy of the result is of paramount importance. It's hard to train models if the gradients are subtly wrong, so we need a good testing methodology.
+One pitfall to watch out for when writing an autograd engine are reference cycles. Consider an `AccumulateGrad` node:
+```
+pub struct AccumulateGrad {
+    pub(crate) variable: Weak<RefCell<Tensor>>,
+    pub(crate) next_functions: Vec<Cell<Node>>,
+    pub(crate) args: Vec<Cell<Tensor>>,
+}
+```
+The variable field is defined as a weak reference to the Tensor. If it were, say, an `Rc`, then we'd have a reference cycle where the neither the Tensor nor its grad_fn can be dropped because they hold mutual references. The same issue was noted as a problem during the development of the Torch library.
+
+-----------
+
+Accuracy of the result is of paramount importance. It's hard to train models if the gradients are subtly wrong so we need a good testing methodology.
 I settled on the idea of using the well-vetted torch library, or more particularly its Rust bindings `tch`, as a source of ground truth by which to compare results.
 
 The idea is that we build the same expression in both my Tensor implementation and in torch, call the backward function, and then compare the gradients computed.
