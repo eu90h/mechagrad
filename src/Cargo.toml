@@ -1,0 +1,18 @@
+[package]
+name = "mechagrad"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ndarray = "0.16"
+#ndarray-linalg = { version = "0.13", features = ["openblas-system"] }
+num-traits = "*"
+parking_lot = "*"
+ndarray-rand = "0.15.0"
+ndarray-stats = "0.5.1"
+
+[dev-dependencies]
+all_asserts = "2.3.1"
+pretty_assertions = "1"
+#pyo3 = "*"
+tch = { version = "0.16"}
