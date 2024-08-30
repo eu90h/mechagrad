@@ -43,7 +43,9 @@ It's fairly easy now to imagine how this all fits together. We call `backward`, 
 These set the `.grad` field of their children, which then get their `_backward` called, which continues pushing the grads around, etc., until we've traversed the whole graph.
 
 Karpathy's micrograd is delightfully simple and shows the entire essence of a AD engine. 
+
 ------
+
 Now let's take a look at a look at the MyTorch project for the fall 2020 semester of CMU's 11-785 Introduction to Deep Learning.
 This, as the name hints, intends to replicate a reasonable subset of the widely-used PyTorch library.
 
