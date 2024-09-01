@@ -21,7 +21,7 @@ fn check_close(a: Tensor, b: tch::Tensor) {
 
 #[allow(non_snake_case)]
 fn main() {
-    let mnist = tch::vision::mnist::load_dir("/home/stefan/Downloads/MNIST_ORG").unwrap();
+    let mnist = tch::vision::mnist::load_dir("MNIST_ORG").unwrap();
     let A = Array::random((128,784), Uniform::new(-1., 1.));
     let B = Array::random((10,128), Uniform::new(-1., 1.));
     let C = Array::random(128, Uniform::new(-1., 1.));
