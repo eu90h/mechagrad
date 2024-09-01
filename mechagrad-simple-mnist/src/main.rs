@@ -156,9 +156,6 @@ fn main() {
           py_test_hits += 1;
         }
       });
-
-      //Comparisons & Updates
-      if i % 100 == 0 { println!("[test example {}] mechagrad {}\ttorch {}", i, my_test_hits as f64/trials as f64, py_test_hits as f64/trials as f64); }
     }
 
     println!("mechagrad model test accuracy: {}\ntorch model test accuracy: {}", my_test_hits as f64/trials as f64, py_test_hits as f64/trials as f64);
