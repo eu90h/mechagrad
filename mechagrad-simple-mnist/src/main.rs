@@ -48,75 +48,112 @@ fn main() {
     let mut my_hits = 0;
     let mut py_hits = 0;
     let mut trials = 0;
-    for i in 0..mnist.train_images.size()[0] {
-      trials += 1;
-      let xx = mnist.train_images.get(i).internal_cast_double(false);
-      let yy = mnist.train_labels.get(i).internal_cast_long(false);
-      let v : Vec<f64> = xx.copy().try_into().unwrap();
-      let x = Tensor::from(Array::from_vec(v).into_dyn().into());
-      let v : f64 = yy.copy().try_into().unwrap();
-      let v = v as usize;
+    let mut my_loss = None;
+    let mut py_loss = None;
+    let batch_size = 2_i64.pow(3);
+    let mut batch_loss_tally = 0.0;
+    for epoch in 0..10 {
+      for i in 0..mnist.train_images.size()[0] {
+        trials += 1;
+        let xx = mnist.train_images.get(i).internal_cast_double(false);
+        let yy = mnist.train_labels.get(i).internal_cast_long(false);
+        let v : Vec<f64> = xx.copy().try_into().unwrap();
+        let x = Tensor::from(Array::from_vec(v).into_dyn().into());
+        let v : f64 = yy.copy().try_into().unwrap();
+        let v = v as usize;
 
-      // Mechagrad
-      let my_output = (&W1.matmul(&x) + &B1).relu();
-      let mut logits = &mut W2.matmul(&my_output) + &mut B2;
-      let logits2 = logits.logsoftmax()  ;
-      let y_hat = logits2.argmax();
-      if y_hat == v {
-          my_hits += 1;
-      }
-      let mut z = vec![0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-      z[v as usize] = 1.0;
-      let rhs = Tensor::from(ArcArray::from_vec(z).into_dyn().into());
-      let mut loss = logits2.dot(&rhs)*-1.0;
-      W1.zero_grad();
-      W2.zero_grad();
-      B1.zero_grad();
-      B2.zero_grad();
-      loss.backward();
-
-      // Torch
-      let pyX = xx;
-      let pyoutput = (pyW1.matmul(&pyX) + &pyB1).relu();
-      let pyoutput2 = pyW2.matmul(&pyoutput) + &pyB2;
-      let mut z = vec![0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-      z[v as usize] = 1.0;
-      let rhs = tch::Tensor::from_slice(&z).internal_cast_double(false);
-      let pyloss = pyoutput2.cross_entropy_loss::<&tch::Tensor>(&rhs, None, tch::Reduction::Sum, -1, 0.);
-      pyW1.zero_grad();
-      pyW2.zero_grad();
-      pyB1.zero_grad();
-      pyB2.zero_grad();
-      pyloss.backward();
-      no_grad(|| {
-        let y_hat: f64 = pyoutput2.argmax(-1, false).try_into().unwrap();
-        if y_hat as usize == v {
-            py_hits += 1;
+        // Mechagrad
+        let my_output = (&W1.matmul(&x) + &B1).relu();
+        let mut logits = &mut W2.matmul(&my_output) + &mut B2;
+        let logits2 = logits.logsoftmax()  ;
+        let y_hat = logits2.argmax();
+        if y_hat == v {
+            my_hits += 1;
         }
-      });
+        let mut z = vec![0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        z[v as usize] = 1.0;
+        let rhs = Tensor::from(ArcArray::from_vec(z).into_dyn().into());
+        let loss = logits2.dot(&rhs)*-1.0;
+        if my_loss.is_none() {
+          my_loss = Some(loss);
+        } else {
+          my_loss = my_loss.map(|v| {
+            v + loss
+          });
+        }
+        if i % batch_size == 0 && i > 0 {
+          W1.zero_grad();
+          W2.zero_grad();
+          B1.zero_grad();
+          B2.zero_grad();
+          let mut loss = my_loss.unwrap() * 1.0/(batch_size as f64);
+          
+          loss.backward();
+          let l: Vec<f64> = loss.try_into().unwrap();
+          batch_loss_tally += l.get(0).unwrap();
+          my_loss = None;
+        }
 
-      //Comparisons & Updates
-      if i % 100 == 0 { println!("[train example {}] mechagrad {}\ttorch {}", i, my_hits as f64/trials as f64, py_hits as f64/trials as f64); }
-      check_close(W1.clone(), pyW1.copy());
-      check_close(W2.clone(), pyW2.copy());
-      check_close(W1.clone().grad().unwrap(), pyW1.grad());
-      check_close(W2.clone().grad().unwrap(), pyW2.grad());
+        // Torch
+        let pyX = xx;
+        let pyoutput = (pyW1.matmul(&pyX) + &pyB1).relu();
+        let pyoutput2 = pyW2.matmul(&pyoutput) + &pyB2;
+        let mut z = vec![0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        z[v as usize] = 1.0;
+        let rhs = tch::Tensor::from_slice(&z).internal_cast_double(false);
+        let pyloss = pyoutput2.cross_entropy_loss::<&tch::Tensor>(&rhs, None, tch::Reduction::Sum, -1, 0.);
+        if py_loss.is_none() {
+          py_loss = Some(pyloss);
+        } else {
+          py_loss = py_loss.map(|v| {
+            v + pyloss
+          })
+        }
+        if i % batch_size == 0 && i > 0 {
+          pyW1.zero_grad();
+          pyW2.zero_grad();
+          pyB1.zero_grad();
+          pyB2.zero_grad();
+          let loss = py_loss.unwrap() * 1.0/(batch_size as f64);
+          loss.backward();
+          py_loss = None;
+        }
+      
+        no_grad(|| {
+          let y_hat: f64 = pyoutput2.argmax(-1, false).try_into().unwrap();
+          if y_hat as usize == v {
+              py_hits += 1;
+          }
+        });
 
-      W1.grad_step(1e-3);
-      W2.grad_step(1e-3);
-      B1.grad_step(1e-3);
-      B2.grad_step(1e-3);
-      tch::no_grad(|| {
-        pyW1 += pyW1.grad() * (-1e-3);
-        pyW2 += pyW2.grad() * (-1e-3);
-        pyB1 += pyB1.grad() * (-1e-3);
-        pyB2 += pyB2.grad() * (-1e-3);
-      });
-  
-      check_close(W1.clone(), pyW1.copy());
-      check_close(W2.clone(), pyW2.copy());
+        if i % (10*batch_size) == 0 && i > 0 {
+          println!("[epoch {}, train example {}] mechagrad acc. {}\ttorch acc. {}\nmechagrad avg. batch loss {}", epoch, i, my_hits as f64/trials as f64, py_hits as f64/trials as f64, batch_loss_tally/10.0); 
+          batch_loss_tally = 0.0;
+        }
+
+        //Comparisons & Updates
+        if i % batch_size == 0 && i > 0 {
+          check_close(W1.clone(), pyW1.copy());
+          check_close(W2.clone(), pyW2.copy());
+          check_close(W1.clone().grad().unwrap(), pyW1.grad());
+          check_close(W2.clone().grad().unwrap(), pyW2.grad());
+
+          W1.grad_step(1e-3);
+          W2.grad_step(1e-3);
+          B1.grad_step(1e-3);
+          B2.grad_step(1e-3);
+          tch::no_grad(|| {
+            pyW1 += pyW1.grad() * (-1e-3);
+            pyW2 += pyW2.grad() * (-1e-3);
+            pyB1 += pyB1.grad() * (-1e-3);
+            pyB2 += pyB2.grad() * (-1e-3);
+          });
+      
+          check_close(W1.clone(), pyW1.copy());
+          check_close(W2.clone(), pyW2.copy());
+        }
+      }
     }
-
     let mut my_test_hits = 0;
     let mut py_test_hits = 0;
     let mut trials = 0;
