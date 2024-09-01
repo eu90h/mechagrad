@@ -120,6 +120,14 @@ fn main() {
     let mut my_test_hits = 0;
     let mut py_test_hits = 0;
     let mut trials = 0;
+    let pyW1 = pyW1.set_requires_grad(false);
+    let pyW2 = pyW2.set_requires_grad(false);
+    let pyB1 = pyB1.set_requires_grad(false);
+    let pyB2 = pyB2.set_requires_grad(false);
+    W1.requires_grad = false;
+    W2.requires_grad = false;
+    B1.requires_grad = false;
+    B2.requires_grad = false;
     for i in 0..mnist.test_images.size()[0] {
       trials += 1;
       let xx = mnist.train_images.get(i).internal_cast_double(false);
@@ -137,29 +145,11 @@ fn main() {
       if y_hat == v {
         my_test_hits += 1;
       }
-      let mut z = vec![0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-      z[v as usize] = 1.0;
-      let rhs = Tensor::from(ArcArray::from_vec(z).into_dyn().into());
-      let mut loss = logits2.dot(&rhs)*-1.0;
-      W1.zero_grad();
-      W2.zero_grad();
-      B1.zero_grad();
-      B2.zero_grad();
-      loss.backward();
 
       // Torch
       let pyX = xx;
       let pyoutput = (pyW1.matmul(&pyX) + &pyB1).relu();
       let pyoutput2 = pyW2.matmul(&pyoutput) + &pyB2;
-      let mut z = vec![0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-      z[v as usize] = 1.0;
-      let rhs = tch::Tensor::from_slice(&z).internal_cast_double(false);
-      let pyloss = pyoutput2.cross_entropy_loss::<&tch::Tensor>(&rhs, None, tch::Reduction::Sum, -1, 0.);
-      pyW1.zero_grad();
-      pyW2.zero_grad();
-      pyB1.zero_grad();
-      pyB2.zero_grad();
-      pyloss.backward();
       no_grad(|| {
         let y_hat: f64 = pyoutput2.argmax(-1, false).try_into().unwrap();
         if y_hat as usize == v {
