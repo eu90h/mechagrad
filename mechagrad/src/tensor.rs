@@ -1,6 +1,7 @@
 use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 use ndarray::{ArcArray, IxDyn};
 use num_traits::Inv;
+use crate::conv2d::Conv2D;
 use crate::div::Div;
 use crate::exp::Exp;
 use crate::log::Log;
@@ -112,7 +113,14 @@ impl Tensor {
         result.unwrap().get(0).unwrap().clone()
     }
 
- 
+    pub fn conv2d(&self, kernel: &Tensor) -> Tensor {
+        let mut mul = Conv2D {
+            left: Rc::new(RefCell::new(self.clone())),
+            kernel: Rc::new(RefCell::new(kernel.clone())),
+        };
+        let result = mul.apply();
+        result.unwrap().get(0).unwrap().clone()
+    }
 
     pub fn dot(&self, rhs: &Tensor) -> Tensor {
         let mut mul = DotProduct {

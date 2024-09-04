@@ -19,6 +19,7 @@ mod max;
 mod div;
 mod pow;
 mod sub;
+mod conv2d;
 
 use std::{cell::RefCell, rc::Rc};
 ///TODO: get rid of this
