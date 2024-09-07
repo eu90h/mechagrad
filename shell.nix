@@ -13,6 +13,9 @@ in
       lapack
       gfortran
       libtorch-bin
+      python3
+      python312Packages.pytorch
+      openssl
     ];
 
     RUSTC_VERSION = overrides.toolchain.channel;
