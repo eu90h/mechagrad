@@ -16,7 +16,6 @@ use crate::{accumulate_grad::AccumulateGrad, backward_function::BackwardFunction
 pub fn pad<A,D>(s: ArcArray<A, D>, pad_width: Vec<[usize; 2]>, const_value: A) -> Array<A, D>
 where
     A: Clone,
-   // S: ndarray::Data<Elem = A>,
     D: ndarray::Dimension
 {
     assert_eq!(
@@ -49,6 +48,9 @@ where
     padded
 }
 
+//TODO: allow user to set padding
+//TODO: multichannel support
+//TODO: vectorization
 #[derive(Debug, Clone)]
 pub struct Conv2D {
     pub(crate) left: Cell<Tensor>,
@@ -65,17 +67,15 @@ impl Function for Conv2D {
         let kern_sh = kernel_data.shape().to_owned();
         let mut nu_sh = vec![];
         for (x,y) in zip(a_sh, kern_sh) {
-            nu_sh.push(x-y+1 + 2);
+            nu_sh.push(x - y + 1 + 2);
         }
         let mut c= Array::zeros(nu_sh).into_dimensionality().unwrap();
         let a_data_padded = pad(a_data.clone(), vec![[1, 1], [1, 1]], 0.0);
-        let k_w = kernel_data.shape()[0];
-        let k_h = kernel_data.shape()[1];
         for i in 0..c.shape()[0] {
             for j in 0..c.shape()[1] {
                 let mut conv: f64 = 0.0;
-                for k in 0..k_w {
-                    for l in 0..k_h {
+                for k in 0..kernel_data.shape()[0] {
+                    for l in 0..kernel_data.shape()[1] {
                         unsafe {
                             conv += *a_data_padded.uget([i + k, j + l]) * kernel_data.uget([k, l]);
                         }
@@ -105,28 +105,19 @@ impl Function for Conv2D {
         let k_h = (a_data_padded.shape()[0] - grad_output.shape()[0]) - k_w;
         let j_w = (a_data_padded.shape()[1] - grad_output.shape()[1]).div_ceil(2);
         let j_h = (a_data_padded.shape()[1] - grad_output.shape()[1]) - j_w;
-        let grad_data_padded: ArrayBase<ndarray::OwnedRepr<f64>, Dim<ndarray::IxDynImpl>> = pad(grad_output.clone().into_dyn().into(), vec![[k_w,k_h], [j_w, j_h]], 0.0);
-        for i in 0..a_data_padded.shape()[0] - kernel_data.shape()[0] + 1 {
-            for j in 0..a_data_padded.shape()[1] - kernel_data.shape()[1] + 1 {
-                for k in 0..kernel_data.shape()[0] {
-                    for l in 0..kernel_data.shape()[1] {
-                        unsafe {
-                            let lhs = *a_data_padded.uget([i + k, j + l]);
-                            let rhs = grad_data_padded.uget([i + k, j + l]);
-                            *grad_kernel_data.uget_mut([k, l]) += lhs * rhs;
-                        }
-                    }
-                }
-            }
-        }
         let mut grad_left_data: ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>> = Array::zeros(a.data.shape()).into_dimensionality().unwrap();
-        for i in 0..grad_left_data.shape()[0]  {
+        let grad_data_padded_zeros: ArrayBase<ndarray::OwnedRepr<f64>, Dim<ndarray::IxDynImpl>> = pad(grad_output.clone().into_dyn().into(), vec![[k_w, k_h], [j_w, j_h]], 0.0);
+        let grad_data_padded_ones: ArrayBase<ndarray::OwnedRepr<f64>, Dim<ndarray::IxDynImpl>> = pad(grad_output.clone().into_dyn().into(), vec![[k_w, k_h], [j_w, j_h]], 1.0);
+        for i in 0..grad_left_data.shape()[0]{
             for j in 0..grad_left_data.shape()[1] {
                 let mut conv: f64 = 0.0;
                 for k in 0..kernel_data.shape()[0] {
                     for l in 0..kernel_data.shape()[1] {
-                        if i + k < grad_data_padded.shape()[0] && j + l < grad_data_padded.shape()[1] {
-                            conv += unsafe { grad_data_padded.uget([i + k, j + l]) * kernel_data.uget([kernel_data.shape()[0] - k - 1, kernel_data.shape()[1] - l - 1]) };
+                        if i < a_data_padded.shape()[0] - kernel_data.shape()[0] + 1 && j < a_data_padded.shape()[1] - kernel_data.shape()[1] + 1 {
+                            unsafe { *grad_kernel_data.uget_mut([k, l]) += *a_data_padded.uget([i + k, j + l])*grad_data_padded_ones.uget([i + k, j + l]); }
+                        }
+                        if i + k < grad_data_padded_zeros.shape()[0] && j + l < grad_data_padded_zeros.shape()[1] {
+                            conv += unsafe { grad_data_padded_zeros.uget([i + k, j + l]) * kernel_data.uget([kernel_data.shape()[0] - k - 1, kernel_data.shape()[1] - l - 1]) };
                         }
                     }
                 }
@@ -227,7 +218,7 @@ mod tests {
             let mut conf: tch::nn::ConvConfigND<i64> = Default::default();
             conf.padding_mode = tch::nn::PaddingMode::Zeros;
             conf.padding = 1;
-            let conv1 = tch::nn::conv2d(vs, 1, 1, 3, conf);
+            let conv1 = tch::nn::conv2d(vs, 1, 1, 2, conf);
             Net { conv1 }
         }
     }
@@ -251,12 +242,12 @@ mod tests {
         //Output to test
         ////////////
         let binding = Array::from_iter(vec![
-        1.0,1.0,1.0,2.0,3.0,
-        1.0,1.0,1.0,2.0,3.0,
-        1.0,1.0,1.0,2.0,3.0,
-        2.0,2.0,2.0,2.0,3.0,
-        3.0,3.0,3.0,3.0,3.0,
-        4.0,4.0,4.0,4.0,4.0
+            1.0,1.0,1.0,2.0,3.0,
+            1.0,1.0,1.0,2.0,3.0,
+            1.0,1.0,1.0,2.0,3.0,
+            2.0,2.0,2.0,2.0,3.0,
+            3.0,3.0,3.0,3.0,3.0,
+            4.0,4.0,4.0,4.0,4.0
         ]);
 
         let m: ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>> = binding.clone().to_shape((6, 5)).unwrap().to_owned();
@@ -281,20 +272,20 @@ mod tests {
 
         let py_output = net.forward_t(&py_m, false);
         let py_loss = py_output.sum(None);
-        py_loss.backward();
 
+        py_loss.backward();
         //The comparison
         ////////////////
         check_close(my_output, py_output.reshape([6,5]));
         check_close(kernel.grad().unwrap(), net.conv1.ws.grad().reshape([3,3]));
         check_close(m.grad().unwrap(), py_m.grad().reshape([6,5]));
     }
+
     #[test]
     fn test_conv2d_wikipedia() {
         //Output to test
         ////////////
         let binding = Array::from_iter(vec![5.0, 0.0, 8.0, 7.0, 8.0, 1.0,1.0, 9.0, 5.0, 0.0, 7.0, 7.0, 6.0, 0.0, 2.0, 4.0, 6.0, 6.0, 9.0, 7.0, 6.0, 6.0, 8.0, 4.0, 8.0, 3.0, 8.0, 5.0, 1.0, 3.0, 7.0, 2.0, 7.0, 0.0, 1.0, 0.0]);
-
         let m: ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>> = binding.clone().to_shape((6, 6)).unwrap().to_owned();
         let mut m = Tensor::from(m.into_dyn().into());
         let mut kernel_array = Array::from_iter([0., 1., 0., 1., -4., 1., 0., 1., 0.]).to_shape((3, 3)).unwrap().to_owned();
@@ -327,6 +318,42 @@ mod tests {
     }
 
     #[test]
+    fn test_conv2d_rand2() {
+        //Output to test
+        ////////////
+        let binding = Array::random((60), Uniform::new(-100., 100.));
+        let m: ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>> = binding.clone().to_shape((10, 6)).unwrap().to_owned();
+        let mut m = Tensor::from(m.into_dyn().into());
+        let mut kernel_array = Array::from_iter([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to_shape((4, 4)).unwrap().to_owned();
+        let mut kernel = Tensor::from(kernel_array.clone().into_dyn().into());
+        m.requires_grad = true;
+        kernel.requires_grad = true;
+        let my_output = m.conv2d(&kernel);
+        let mut loss = my_output.sum();
+        loss.backward();
+
+        //Ground truth
+        //////////////
+        let vs = tch::nn::VarStore::new(tch::Device::cuda_if_available());
+        let mut net = Net::new(&vs.root());
+
+        let py_m = tch::Tensor::from_slice(&binding.to_vec()).to(tch::Device::Cpu).reshape([1,1,10,6]).set_requires_grad(true);
+        let py_kernel = tch::Tensor::from_slice(&kernel_array.into_raw_vec()).to(tch::Device::Cpu).reshape([1,1,4,4]).transpose(-1,-1).set_requires_grad(true);
+        net.conv1.ws = py_kernel;
+        net.conv1.bs = None;
+
+        let py_output = net.forward_t(&py_m, false);
+        let py_loss = py_output.sum(None);
+        py_loss.backward();
+
+        //The comparison
+        ////////////////
+        check_close(my_output, py_output);
+        check_close(kernel.grad().unwrap(), net.conv1.ws.grad().reshape([4,4]));
+        check_close(m.grad().unwrap(), py_m.grad().reshape([10,6]));
+    }
+    
+    #[test]
     fn test_conv2d_rand() {
         //Output to test
         ////////////
@@ -355,6 +382,7 @@ mod tests {
         let py_output = net.forward_t(&py_m, false);
         let py_loss = py_output.sum(None);
         py_loss.backward();
+
         //The comparison
         ////////////////
         check_close(my_output, py_output);
