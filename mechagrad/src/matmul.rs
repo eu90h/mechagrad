@@ -59,65 +59,128 @@ impl Function for MatMul {
     }
 
     fn backward(&mut self, grad_outputs: Vec<Cell<Tensor>>) -> Vec<Tensor> {
-        let (grad_a, grad_b) = {
-            let g = grad_outputs.get(0).unwrap();
-            let g = g.borrow();
-            let g: ArcArray<f64, Dim<[usize; 1]>> = g.data.clone().into_dimensionality().unwrap();
-            let left: ArcArray<f64, Dim<[usize; 2]>>  = self.left.borrow().data.clone().into_dimensionality().unwrap();
-            let right: ArcArray<f64, Dim<[usize; 1]>> = self.right.borrow().data.clone().into_dimensionality().unwrap();
-            let dw: ArcArray<f64, Dim<[usize; 2]>> = outer(&g, &right.t().to_owned()).into() ;
-            let da: ArcArray<f64, Dim<[usize; 1]>>  = left.t().dot(&g).into();
-            (dw, da)
-        };
-        let binding = self.right.borrow();
-        let b_shape = binding.data.shape();
-        if grad_b.shape().len() == 1 && grad_b.shape() != b_shape {
-            let grad_a = Tensor {
-                data: grad_a.into_dimensionality().unwrap().into(), 
-                requires_grad: false,
-                is_leaf: true,
-                grad: Rc::new(RefCell::new(None)),
-                grad_fn: None,
-                detached: true,
-            };
-            let gb = grad_b.clone();
-            let g = gb.sum();
-            let grad_b = Tensor {
-                data: ArcArray::from_iter([g]).into_dyn().into(),
-                requires_grad: false,
-                is_leaf: true,
-                grad: Rc::new(RefCell::new(None)),
-                grad_fn: None,
-                detached: true,
-            };
-            
-            assert_eq!(self.left.borrow().data.shape(), grad_a.data.shape());
-            assert_eq!(self.right.borrow().data.shape(), grad_b.data.shape());
-            vec![grad_a, grad_b]
-        
-        } else {
-            let grad_a = Tensor {
-                data: grad_a.into_dimensionality().unwrap().into(), 
-                requires_grad: false,
-                is_leaf: true,
-                grad: Rc::new(RefCell::new(None)),
-                grad_fn: None,
-                detached: true,
-            };
-            
-            let grad_b = Tensor {
-                data: grad_b.into_dimensionality().unwrap().into(),
-                requires_grad: false,
-                is_leaf: true,
-                grad: Rc::new(RefCell::new(None)),
-                grad_fn: None,
-                detached: true,
-            };
-            
-            assert_eq!(self.left.borrow().data.shape(), grad_a.data.shape());
-            assert_eq!(self.right.borrow().data.shape(), grad_b.data.shape());
-            vec![grad_a, grad_b]
+        match grad_outputs.get(0) {
+            Some(g) => {
+                let g = g.borrow();
+                if g.data.shape().len() == 1 {
+                    let g: ArcArray<f64, Dim<[usize; 1]>> = g.data.clone().into_dimensionality().unwrap();
+                    let left: ArcArray<f64, Dim<[usize; 2]>>  = self.left.borrow().data.clone().into_dimensionality().unwrap();
+                    let right: ArcArray<f64, Dim<[usize; 1]>> = self.right.borrow().data.clone().into_dimensionality().unwrap();
+                    let grad_a: ArcArray<f64, Dim<[usize; 2]>> = outer(&g, &right.t().to_owned()).into() ;
+                    let grad_b: ArcArray<f64, Dim<[usize; 1]>>  = left.t().dot(&g).into();
+                    let binding = self.right.borrow();
+                    let b_shape = binding.data.shape();
+                    if grad_b.shape().len() == 1 && grad_b.shape() != b_shape {
+                        let grad_a = Tensor {
+                            data: grad_a.into_dimensionality().unwrap().into(), 
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        let gb = grad_b.clone();
+                        let g = gb.sum();
+                        let grad_b = Tensor {
+                            data: ArcArray::from_iter([g]).into_dyn().into(),
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        
+                        assert_eq!(self.left.borrow().data.shape(), grad_a.data.shape());
+                        assert_eq!(self.right.borrow().data.shape(), grad_b.data.shape());
+                        vec![grad_a, grad_b]
+                    
+                    } else {
+                        let grad_a = Tensor {
+                            data: grad_a.into_dimensionality().unwrap().into(), 
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        
+                        let grad_b = Tensor {
+                            data: grad_b.into_dimensionality().unwrap().into(),
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        
+                        assert_eq!(self.left.borrow().data.shape(), grad_a.data.shape());
+                        assert_eq!(self.right.borrow().data.shape(), grad_b.data.shape());
+                        vec![grad_a, grad_b]
+                    }
+                } else if g.data.shape().len() == 2 {
+                    let g: ArcArray<f64, Dim<[usize; 2]>> = g.data.clone().into_dimensionality().unwrap();
+                    let left: ArcArray<f64, Dim<[usize; 2]>>  = self.left.borrow().data.clone().into_dimensionality().unwrap();
+                    let right: ArcArray<f64, Dim<[usize; 2]>> = self.right.borrow().data.clone().into_dimensionality().unwrap();
+                    let grad_b: ArcArray<f64, Dim<[usize; 2]>> = left.t().dot(&g).into_owned().into();
+                    let grad_a: ArcArray<f64, Dim<[usize; 2]>>  = g.dot(&right.t()).into_owned().into();
+                    let binding = self.right.borrow();
+                    let b_shape = binding.data.shape();
+                    if grad_b.shape().len() == 1 && grad_b.shape() != b_shape {
+                        let grad_a = Tensor {
+                            data: grad_a.into_dimensionality().unwrap().into(), 
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        let gb = grad_b.clone();
+                        let g = gb.sum();
+                        let grad_b = Tensor {
+                            data: ArcArray::from_iter([g]).into_dyn().into(),
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        
+                        assert_eq!(self.left.borrow().data.shape(), grad_a.data.shape());
+                        assert_eq!(self.right.borrow().data.shape(), grad_b.data.shape());
+                        vec![grad_a, grad_b]
+                    
+                    } else {
+                        let grad_a = Tensor {
+                            data: grad_a.into_dimensionality().unwrap().into(), 
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        
+                        let grad_b = Tensor {
+                            data: grad_b.into_dimensionality().unwrap().into(),
+                            requires_grad: false,
+                            is_leaf: true,
+                            grad: Rc::new(RefCell::new(None)),
+                            grad_fn: None,
+                            detached: true,
+                        };
+                        
+                        assert_eq!(self.left.borrow().data.shape(), grad_a.data.shape());
+                        assert_eq!(self.right.borrow().data.shape(), grad_b.data.shape());
+                        vec![grad_a, grad_b]
+                    }
+                } else {
+                    todo!()
+                }
+         
+                
+            }
+            None => todo!(),
         }
+        
     
     }
 
@@ -175,6 +238,39 @@ mod tests {
         for (x,y) in zip(a, b) {
             assert_near!(x, y, 1e-1);
         }
+    }
+
+    #[test]
+    fn test_mat_by_mat() {
+        //Output to test
+        ////////////
+        let mut W = Tensor::from(arr2(&[[0.7f64, 0.9], [0.5, 0.34]]).into_dyn().into());
+        let mut W2 = Tensor::from(arr2(&[[0.18f64, 0.45], [0.9, 0.12]]).into_dyn().into());
+        let x = Tensor::from(arr1(&[1.0f64, 2.0]).into_dyn().into());
+        W.requires_grad = true;
+        W2.requires_grad = true;
+        let my_output = W.matmul(&W2);
+        let my_output = my_output.matmul(&x);
+        let mut my_output = my_output.dot(&my_output);
+        backward(&mut my_output);
+
+        //Ground truth
+        //////////////
+        let pyX = tch::Tensor::from_slice(&[1.0, 2.0]).to(tch::Device::Cpu);
+        let pyW = tch::Tensor::from_slice2(&[[0.7f64, 0.9], [0.5, 0.34]]).set_requires_grad(true).to(tch::Device::Cpu);
+        let pyW2 = tch::Tensor::from_slice2(&[[0.18f64, 0.45], [0.9, 0.12]]).set_requires_grad(true).to(tch::Device::Cpu);
+
+        let pyout: tch::Tensor = pyW.matmul(&pyW2);
+        let pyout: tch::Tensor = pyout.matmul(&pyX);
+        let pyout = pyout.dot(&pyout);
+       
+        pyout.backward();
+
+        //The comparison
+        ////////////////
+        check_close(W.grad().unwrap(), pyW.grad());
+        check_close(W2.grad().unwrap(), pyW2.grad());
+
     }
 
     #[test]
