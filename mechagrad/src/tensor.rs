@@ -77,24 +77,6 @@ impl Tensor {
         }
     }
 
-    /*pub fn add(lhs: Cell<Tensor>, rhs: Cell<Tensor>) -> Tensor {
-        let mut add = Add {
-            left: lhs,
-            right: rhs,
-        };
-        let result = add.apply();
-        result.unwrap().get(0).unwrap().clone()
-    }
-
-    pub fn mul(lhs: Cell<Tensor>, rhs: Cell<Tensor>) -> Tensor {
-        let mut mul = Mul {
-            left: lhs,
-            right: rhs,
-        };
-        let result = mul.apply();
-        result.unwrap().get(0).unwrap().clone()
-    }*/
-
     pub fn matmul(&self, rhs: &Tensor) -> Tensor {
         let mut mul = MatMul {
             left: Rc::new(RefCell::new(self.clone())),
@@ -299,20 +281,6 @@ impl std::ops::Sub<&Tensor> for Tensor {
         result.unwrap().get(0).unwrap().clone()
     }
 }
-/*impl std::ops::Sub<f64> for Tensor {
-    type Output = Tensor;
-
-    fn sub(self, rhs: f64) -> Self::Output {
-        self + Tensor::from(arr1(&[(rhs.clone() * -1.0)]).into_dyn().into())
-    }
-}
-impl std::ops::Sub<f64> for &mut Tensor {
-    type Output = Tensor;
-
-    fn sub(self, rhs: f64) -> Self::Output {
-        self + &mut Tensor::from(arr1(&[(rhs.clone() * -1.0)]).into_dyn().into())
-    }
-}*/
 impl std::ops::Add<&Tensor> for Tensor {
     type Output = Tensor;
 
