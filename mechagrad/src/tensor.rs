@@ -430,13 +430,8 @@ impl std::ops::Mul<Rc<RefCell<Tensor>>> for Tensor {
 impl std::ops::Mul<f64> for Tensor {
     type Output = Tensor;
 
-    fn mul(mut self, rhs: f64) -> Self::Output {
-        let rhs = {
-            let binding = self.data.borrow_mut();
-            let binding = binding.to_owned();
-            let sh = binding.shape();
-            ArcArray::ones(sh) * rhs
-        };
+    fn mul(self, rhs: f64) -> Self::Output {
+        let rhs = ArcArray::ones(self.shape()) * rhs;
 
         let mut rhs = Tensor::from(rhs.into_dimensionality().unwrap());
         rhs.is_leaf = true;
@@ -454,13 +449,8 @@ impl std::ops::Mul<f64> for Tensor {
 impl std::ops::Div<f64> for Tensor {
     type Output = Tensor;
 
-    fn div(mut self, rhs: f64) -> Self::Output {
-        let rhs = {
-            let binding = self.data.borrow_mut();
-            let binding = binding.to_owned();
-            let sh = binding.shape();
-            ArcArray::ones(sh) * rhs.inv()
-        };
+    fn div(self, rhs: f64) -> Self::Output {
+        let rhs = ArcArray::ones(self.data.shape()) * rhs.inv();
 
         let mut rhs = Tensor::from(rhs.into_dimensionality().unwrap());
         rhs.is_leaf = true;
