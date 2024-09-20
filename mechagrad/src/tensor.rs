@@ -254,6 +254,10 @@ impl Tensor {
         let n = d.len();
         self.sum() / (n as f64)
     }
+
+    pub fn shape(&self) -> &[usize] {
+        self.data.shape()
+    }
 }
 
 impl PartialEq for Tensor {
@@ -655,4 +659,11 @@ mod tests {
         check_close(my_truth, ground_truth);
     }
 
+    #[test]
+    fn test_shape() {
+        let a = Array::random((10, 10), Uniform::new(0.0, 1.));
+        let mut tensor = Tensor::from(a.into_dyn().into());
+
+        assert_eq!(tensor.shape(), [10, 10]);
+    }
 }
